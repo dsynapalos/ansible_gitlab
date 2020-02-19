@@ -1,0 +1,98 @@
+---
+- name: copy ssh key
+  shell: ssh-copy-id root@{{ host_ip }}
+  args:
+    executable: /bin/bash
+  delegate_to: 127.0.0.1
+
+- name: Gather the rpm package facts
+  package_facts:
+    manager: auto
+
+- name: ensure dependencies installed
+  yum:
+    name: "{{ packages }}"
+    state: present
+    update_cache: yes
+  vars:
+    packages:
+    - curl
+    - policycoreutils-python
+    - openssh-server
+    - nano
+    - net-tools
+
+- name: Make sure sshd is running & enabled
+  service:
+    enabled: yes
+    name: sshd
+    state: started
+
+- name: add http firewall exception
+  firewalld:
+    port: 80/tcp
+    permanent: yes
+    state: enabled
+
+- name: add https firewall exception
+  firewalld:
+    port: 433/tcp
+    permanent: yes
+    state: enabled
+
+- name: Make sure firewall is restarted
+  systemd:
+    enabled: yes
+    name: firewalld
+    state: restarted
+
+- name: Make sure postfix is running & enabled
+  systemd:
+    enabled: yes
+    name: postfix
+    state: started
+
+- stat:
+    path: /tmp/script.rpm.sh
+  register: st
+  when: "'gitlab-ee' not in ansible_facts.packages"
+
+- name: Download gitlab repo installer
+  get_url:
+    url: https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.rpm.sh
+    dest: /tmp/script.rpm.sh
+    mode: '0755'
+  when:
+    - "'gitlab-ee' not in ansible_facts.packages"
+    - st.stat.exists == false
+
+- name: make repo installer executable
+  file:
+    path: /tmp/script.rpm.sh
+    mode: '0755'
+  when: "'gitlab-ee' not in ansible_facts.packages"
+
+- name: install gitlab repo
+  shell: /tmp/script.rpm.sh
+  args:
+    executable: /bin/bash
+  when: "'gitlab-ee' not in ansible_facts.packages"
+
+- name: install gitlab-ee
+  yum:
+    name: gitlab-ee
+    state: present
+  environment:
+    EXTERNAL_URL: http://{{ host_ip }}
+  register:
+    install_output
+
+#- name: Remove repository (and clean up left-over metadata)
+#  yum_repository:
+#    name: gitlab-ee-*
+#    state: absent
+#  notify: yum-clean-metadata
+
+- name: output
+  debug:
+    var: install_output

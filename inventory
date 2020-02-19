@@ -1,0 +1,11 @@
+[ansible_host]
+127.0.0.1
+
+[ansible_host:vars]
+ansible_connection=local
+
+[gitlab_server]
+gitlab
+
+[gitlab_server:vars]
+ansible_connection=ssh
